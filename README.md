@@ -1,6 +1,10 @@
 # MEMES
 **MRI Estimation for MEG Sourcespace (MEMES)** is a set of tools for estimating an appropriate structural MRI for MEG source analysis in Fieldtrip and/or SPM.
 
+### WORK IN PROGRESS
+Use these scripts at your own risk
+
+### Citation
 If you use MEMES or any of the scripts in this repository, we ask you to please cite the DOI link below:
 
 ```MATLAB 
@@ -11,7 +15,7 @@ http://doi.org/10.5281/zenodo.1451031
 ```
 [![DOI](https://zenodo.org/badge/117603642.svg)](https://zenodo.org/badge/latestdoi/117603642)
 
-The scripts presented in this repository are customised for data acquired from the [Macquarie/KIT MEG laboratory](https://www.mq.edu.au/research/research-centres-groups-and-facilities/healthy-people/facilities/meg) using a 160-channel Yokogawa MEG system for adults and 125-channel Yokogawa MEG system for children. For Elekta data, please see /Elekta folder (please note this has not been fully tested).
+The scripts presented in this repository are customised for data acquired from the Wellcome Centre for Human Neuroimaging, OPM lab.
 
 ### Outline
 
@@ -19,7 +23,7 @@ MEMES is based on the approach of [Gohel et al., (2017)](https://www.frontiersin
 
 ![Procedure](./test_MEMES/MEMES_outline.png)
 
-MEMES produces a coregistered singleshell headmodel and 3D sourcemodel (warped to MNI space) for source analysis in Fieldtrip.
+MEMES produces a coregistered MRI for subsequent source analysis in Fieldtrip.
 
 **Please note:** MEMES and ICP work best with some facial information alongisde the headshape information
 
@@ -34,7 +38,7 @@ Please refer to the [/create_library folder](./create_library) for more informat
 
 ### MEMES for participants aged 18+
 
-For participants aged 18+, please use MEMES3.m in conjunction with an appropriate MRI database. You will need to create a series of meshes, headmodels and sourcemodels yourself. Alternatovely you can request a ready-made library from [@neurofractal](http://neurofractal.github.com). Please refer to the [/create_library folder](./create_library) for more information.
+For participants aged 18+, please use MEMES_FIL.m in conjunction with an appropriate MRI database. You will need to create a series of meshes, headmodels and sourcemodels yourself. Alternatovely you can request a ready-made library from [@neurofractal](http://neurofractal.github.com). Please refer to the [/create_library folder](./create_library) for more information.
 
 ```MATLAB 
 %
@@ -159,3 +163,12 @@ Comparing the difference in visual gamma power between the real and psedo MRI sh
 <img src="./test_MEMES/source_model_peak_pow_diff.png" width="400">
 
 ![MEMES](./actual_memes/3memes.png)
+
+## License:
+
+CC BY-NC: This license allows reusers to distribute, remix, adapt, and build upon the material in any medium or format for noncommercial purposes only, and only so long as attribution is given to the creator. 
+
+It includes the following elements:
+
+BY  – Credit must be given to the creator
+NC  – Only noncommercial uses of the work are permitted

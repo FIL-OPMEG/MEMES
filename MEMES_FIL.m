@@ -41,7 +41,7 @@ function MEMES_FIL(dir_name,headshape_downsampled,...
 %%%%%%%%%%%%%%%%%%%%%
 %
 % Example function call:
-% MEMES3(dir_name,grad_trans,headshape_downsampled,...
+% MEMES_FIL(dir_name,grad_trans,headshape_downsampled,...
 %    path_to_MRI_library,method,[0.98:1.02],8)
 
 % I have introduced a variable scaling parameter for the MRIs to
@@ -52,7 +52,7 @@ function MEMES_FIL(dir_name,headshape_downsampled,...
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-fprintf(['\nThis is MEMES v0.3\n\nMake sure you have asked Robert'...
+fprintf(['\nThis is MEMES for data collected from FIL OPM Lab...\n\nMake sure you have asked Robert'...
     'for an MRI library\n\n']);
 warning('on')
 
@@ -558,8 +558,15 @@ switch method
         save trans_matrix trans_matrix
         save sourcemodel3d sourcemodel3d
         save mri_realigned_MEMES mri_realigned_MEMES
-        %        save mesh mesh
         
+        % Export MRI
+        fprintf('\nExporting MRI...\n');
+        cfg             = [];
+        cfg.parameter   = 'anatomy';
+        cfg.filename    = 'mri_realigned_MEMES';
+        cfg.filetype    = 'nifti';
+        cfg.spmversion  = 'spm12'  
+        ft_volumewrite(cfg,mri_realigned_MEMES);
         
         fprintf('\nCOMPLETED - check the output for quality control\n');
         

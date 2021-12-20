@@ -1,5 +1,5 @@
 function MEMES_FIL(dir_name,headshape_downsampled,...
-    path_to_MRI_library,method,scaling,varargin)
+    path_to_MRI_library,method,varargin)
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % MRI Estimation for MEG Sourcespace (MEMES)
@@ -13,13 +13,11 @@ function MEMES_FIL(dir_name,headshape_downsampled,...
 % - path_to_MRI_library   = path to HCP MRI library
 % - method                = method for creating pseudo head- and
 %                           source-model: 'best' or 'average'
-% - scaling               = scaling factor range applied to MRIs
 %
 %%%%%%%%%%%%%%%%%%
 % Variable Inputs:
 %%%%%%%%%%%%%%%%%%
 %
-% - sourcemodel_size      = size of sourcemodel grid (5,8 or 10mm)
 % - weight_face           = how much do you want to weight towards the
 %                           facial information (1 = no weighting;
 %                           10 = very high weighting. RS recommends
@@ -63,19 +61,12 @@ if ismember(path_to_MRI_library(end),['/','\']) == 0
     error('!!! Path to MRI library must end with / or \ !!!');
 end
 
-%assert(method == 'average','method = average is not yet supported. Use best\n');
-
-if length(scaling) == 1
-    scaling = 1;
-end
 
 % If variable inputs are empty use defaults
 if isempty(varargin)
-    sourcemodel_size    = 8;
     weight_face         = [];
 else
-    sourcemodel_size    = varargin{1};
-    weight_face         = varargin{2};
+    weight_face         = varargin{1};
 end
 
 % Convert headshape_downsampled to mm if required
@@ -113,15 +104,13 @@ end
 fprintf('Now checking the MRI library is organised correctly...\n');
 try
     load([path_to_MRI_library subject{1} '/mesh.mat']);
-    load([path_to_MRI_library subject{1} '/headmodel.mat']);
     load([path_to_MRI_library subject{1} '/mri_realigned.mat']);
-    load([path_to_MRI_library subject{1} '/sourcemodel3d_8mm.mat']);
-    clear mesh headmodel mri_realigned sourcemodel3d
+    clear mesh mri_realigned
     fprintf('...Subject %s is organised correctly!\n',subject{1});
     
 catch
     warning('Your MRI library is not organised correctly');
-    disp('Each folder should contain: mesh.mat, headmodel.mat, mri_realigned.mat, sourcemodel3d_8mm.mat');
+    disp('Each folder should contain: mesh.mat, mri_realigned.mat');
 end
 
 %% CD to the right place
@@ -129,16 +118,15 @@ end
 % CD to right place
 cd(dir_name); fprintf('\nCDd to the right place\n');
 
-%% Perform ICP
+%% Set up varaibles outside the pseudo MRI loop
 
 % Error term variable - MEMES will crash here if your MRI library path is
 % wrong..
 error_term = zeros(1,length(subject));
 % Variable to hold the transformation matrices
 trans_matrix_library = [];
-scaling_factor_all = zeros(1,length(subject));
-count = 1;
 
+%% Facial Weighting?
 % Weight towards facial information, if specified
 if ~isempty(weight_face)
     % Find facial points
@@ -153,62 +141,50 @@ if ~isempty(weight_face)
     fprintf('Applying Weighting of %.2f \n',weight_face);
 end
 
-
+%% Subject Loop
 % For each subject...
 for m = 1:length(subject)
     
+   disp(m);
+    
     % Load the mesh
-    load([path_to_MRI_library subject{m} '/mesh.mat']);
+    sss = load(fullfile(path_to_MRI_library, subject{m},'mesh.mat'));
+    mesh = sss.mesh;
+    load([path_to_MRI_library subject{m} '/fids_SPM_convert.mat']);
     
-    numiter = 30; count2 = 1;
+    % Perform initial realign based on FIDS
+    trans_fids = warp_fid(headshape_downsampled,fids_SPM_convert);
     
-    trans_matrix_temp = []; error_2 = [];
+    mesh2 = ft_transform_geometry(trans_fids,mesh);
     
-    % Perform ICP fit with different scaling factors
-    for scale = scaling
-        if length(scaling) == 1
-            fprintf('Completed %d of %d MRIs\n',m,length(subject));
-        else
-            fprintf('Completed iteration %d of %d ; %d of %d MRIs\n',...
-                count2,length(scaling),m,length(subject));
-        end
-        
-        mesh_coord_scaled = ft_warp_apply([scale 0 0 0;0 scale 0 0; 0 0 scale 0; 0 0 0 1],mesh.pos);
-        % Perform ICP
-        % If we are applying weighting...
-        if ~isempty(weight_face)
-            [R, t, err, ~, ~] = icp(mesh_coord_scaled', ...
-                headshape_downsampled.pos', numiter, 'Minimize', 'plane',...
-                'Extrapolation', true,'Weight', weights,'WorstRejection', 0.05);
-            % If not applying weighting...
-        else
-            [R, t, err, ~, ~] = icp(mesh_coord_scaled', ...
-                headshape_downsampled.pos', numiter, 'Minimize', 'plane',...
-                'Extrapolation', true,'WorstRejection', 0.1);
-        end
-        
-        error_2(count2) = err(end);
-        trans_matrix_temp{count2} = inv([real(R) real(t);0 0 0 1]);
-        count2 = count2+1;
+    %     figure; ft_plot_mesh(mesh2,'facealpha',0.4);
+    %     ft_plot_headshape(headshape_downsampled); view([90 0]); camlight;
+    %     ft_plot_mesh(fids_SPM_convert,'vertexcolor','g','vertexsize',40);
+    
+    numiter = 30;
+    
+    % Perform ICP
+    % If we are applying weighting...
+    if ~isempty(weight_face)
+        [R, t, err, ~, ~] = icp(mesh2.pos', ...
+            headshape_downsampled.pos', numiter, 'Minimize', 'plane',...
+            'Extrapolation', true,'Weight', weights,'WorstRejection', 0.05);
+        % If not applying weighting...
+    else
+        [R, t, err, ~, ~] = icp(mesh2.pos', ...
+            headshape_downsampled.pos', numiter, 'Minimize', 'plane',...
+            'Extrapolation', true,'WorstRejection', 0.1);
     end
     
-    % Find scaling factor with smallest error
-    min_error = min(error_2);
-    % Add error to error_term
-    error_term(m) = min_error;
+    % Update error term
+    error_term(m) = err(end);
     
-    % Add transformation matrix to trans_matrix_library
-    trans_matrix_library{m} = trans_matrix_temp{find(error_2==min_error)};
-    % Add scaling factor
-    scaling_factor_all(m) = scaling(find(error_2==min_error));
-    
-    if length(scaling) > 1
-        fprintf('Best scaling factor is %.2f\n',...
-            scaling(find(error_2==min_error)));
-    end
+    % Combine trans matrices
+    trans_matrix_temp = inv([real(R) real(t);0 0 0 1]);
+    trans_matrix_library{m}  = trans_fids*trans_matrix_temp;
     
     % Clear mesh for next loop
-    clear mesh
+    clear mesh mesh2 fids_SPM_convert
 end
 
 fprintf(' Finished the iterations\n');
@@ -229,20 +205,17 @@ figure;
 for i = 1:9
     load([path_to_MRI_library subject{(concat(i))} '/mesh.mat'])
     mesh_spare = mesh;
-    mesh_spare.pos = ft_warp_apply([scaling_factor_all(concat(i)) 0 0 0;...
-        0 scaling_factor_all(concat(i)) 0 0; ...
-        0 0 scaling_factor_all(concat(i)) 0; 0 0 0 1],mesh_spare.pos);
     mesh_spare.pos = ft_warp_apply(trans_matrix_library{(concat(i))}, mesh_spare.pos);
     
     subplot(3,3,i)
     ft_plot_mesh(mesh_spare,'facecolor',[238,206,179]./255,'EdgeColor','none','facealpha',0.8); hold on;
     camlight; hold on; view([-270,-10]);
     if ismember(i,1:3)
-        title(sprintf('BEST: %d', error_term((concat(i)))));
+        title(sprintf('BEST: %.3f', error_term((concat(i)))));
     elseif ismember(i,4:6)
-        title(sprintf('MIDDLE: %d', error_term((concat(i)))));
+        title(sprintf('MIDDLE: %.3f', error_term((concat(i)))));
     elseif ismember(i,7:9)
-        title(sprintf('WORST: %d', error_term((concat(i)))));
+        title(sprintf('WORST: %.3f', error_term((concat(i)))));
     end
     
     ft_plot_headshape(headshape_downsampled);
@@ -254,73 +227,6 @@ for i = 1:9
     end
 end
 
-%% Create figure to show different scaling factors
-
-if length(scaling) > 1
-    try
-        figure;hist(scaling_factor_all,length(scaling));
-        ylabel('Count');
-        xlabel('Scaling Parameter');
-        
-        % Get information about the same
-        % histogram by returning arguments
-        [n,x] = hist(scaling_factor_all,5);
-        % Create strings for each bar count
-        barstrings = num2str(n');
-        
-        barstrings2 = num2str(scaling');
-        
-        % Create text objects at each location
-        ylim([0 max(n)+5]);
-        text(x,n,barstrings,'horizontalalignment','center','verticalalignment','bottom');
-        
-        xticks(scaling);
-        xTick = get(gca,'xtick');
-        
-        h = findobj(gca,'Type','patch');
-        h.FaceColor = [0 0.5 0.5];
-        h.EdgeColor = 'w';
-        set(gca,'FontSize',15);
-        print('scaling_factor_distribution','-dpng','-r100');
-    catch
-        disp('Cannot Display scaling factors (?)');
-    end
-end
-
-
-%% Use the best for to create a source model for MEG source analysis
-
-% winner = find(error_term == min(min(error_term)));
-% fprintf('\nThe winning MRI is number %d of %d\n',winner,length(mesh_library));
-% trans_matrix = trans_matrix_library{winner};
-%
-% % Create figure to show ICP fit
-% mesh_spare = mesh_library{winner};
-% mesh_spare.pos = ft_warp_apply(trans_matrix, mesh_spare.pos);
-%
-% figure;ft_plot_mesh(mesh_spare,'facecolor',[238,206,179]./255,'EdgeColor','none','facealpha',0.8); hold on;
-% camlight; hold on; view([-180,-10]);
-% title(error_term(winner));
-% ft_plot_headshape(headshape_downsampled);
-%
-% % print('winning_sourcemodel','-dpng','-r100');
-%
-% try
-%     % % Make fancy video
-%     c = datestr(clock); %time and date
-%
-%     figure;
-%     ft_plot_mesh(mesh_spare,'facecolor',[238,206,179]./255,'EdgeColor','none','facealpha',0.8); hold on;
-%     camlight; hold on;
-%     ft_plot_headshape(headshape_downsampled); title(sprintf('%s.   Error of ICP fit = %d' , c, error_term(winner)));
-%     OptionZ.FrameRate=15;OptionZ.Duration=5.5;OptionZ.Periodic=true;
-%     CaptureFigVid([0,0; 360,0], 'ICP_quality',OptionZ)
-%
-% catch
-%     fprintf('You need CaptureFigVid in your path for fancy videos\n');
-% end
-
-fprintf('\n Constructing the headmodel and sourcemodel \n');
 
 switch method
     case 'average'
@@ -462,63 +368,19 @@ switch method
         % Get facial mesh of winner
         load([path_to_MRI_library subject{winner} '/mesh.mat'])
         mesh_spare = mesh;
-        mesh_spare.pos = ft_warp_apply([scaling_factor_all(winner) 0 0 0;0 ...
-            scaling_factor_all(winner) 0 0; 0 0 scaling_factor_all(winner) 0;...
-            0 0 0 1],mesh_spare.pos);
         mesh_spare.pos = ft_warp_apply(trans_matrix, mesh_spare.pos);
         
         % Get MRI of winning subject
         fprintf('Transforming the MRI\n');
         load([path_to_MRI_library subject{winner} '/mri_realigned.mat'],'mri_realigned');
-        disp('done loading');
         mri_realigned_MEMES = ft_transform_geometry(trans_matrix,...
             mri_realigned);
         
-        %% Create Headmodel (in mm)
-        fprintf(' Creating Headmodel in mm\n');
-        
-        load([path_to_MRI_library subject{winner} '/headmodel.mat']);
-        
-        % Scale
-        headmodel.bnd.pos = ft_warp_apply([scaling_factor_all(winner) 0 0 0;0 ...
-            scaling_factor_all(winner) 0 0; 0 0 scaling_factor_all(winner) 0; 0 0 0 1],...
-            headmodel.bnd.pos);
-        
-        % Transform (MESH --> coreg via ICP adjustment)
-        headmodel.bnd.pos = ft_warp_apply(trans_matrix,headmodel.bnd.pos);
-        
-        figure;
-        ft_plot_vol(headmodel);
-        ft_plot_headshape(headshape_downsampled);
-        
-        %% Create Sourcemodel (in mm)
-        fprintf('Creating an %dmm Sourcemodel in mm\n',sourcemodel_size);
-        
-        % Load specified sized sourcemodel
-        load([path_to_MRI_library ...
-            subject{winner} '/sourcemodel3d_' num2str(sourcemodel_size) 'mm.mat']);
-        
-        % Scale
-        sourcemodel3d.pos = ft_warp_apply([scaling_factor_all(winner) 0 0 0;0 scaling_factor_all(winner) 0 0; 0 0 scaling_factor_all(winner) 0; 0 0 0 1],sourcemodel3d.pos);
-        
-        % Transform (MESH --> coreg via ICP adjustment)
-        sourcemodel3d.pos = ft_warp_apply(trans_matrix,sourcemodel3d.pos);
-        
-        % Create figure to check headodel and sourcemodel match
-        figure;
-        ft_plot_vol(headmodel,  'facecolor', 'cortex', 'edgecolor', 'none');
-        alpha 0.4; camlight;
-        ft_plot_mesh(sourcemodel3d.pos(sourcemodel3d.inside,:),'vertexsize',5);
-        view([0 0]);
-        
-        view_angle = [0 90 180 270];
-        
         % Create figure to show final coregiration
         figure; hold on;
+        view_angle = [0 180 90 -90];
         for rep = 1:4
             subplot(2,2,rep);
-            ft_plot_vol(headmodel,  'facecolor', 'cortex', 'edgecolor', 'none');alpha 0.6; camlight;
-            ft_plot_mesh(sourcemodel3d.pos(sourcemodel3d.inside,:),'vertexsize',3);
             ft_plot_headshape(headshape_downsampled) %plot headshape
             view([view_angle(rep),0]);
             ft_plot_mesh(mesh_spare,'facecolor',[238,206,179]./255,'EdgeColor','none','facealpha',0.5);
@@ -526,37 +388,10 @@ switch method
         end
         
         print('coregistration_volumetric_quality_check','-dpng','-r100');
-        
-        
-        %         %% Create coregistered 3D cortical mesh
-        %         mesh = ft_read_headshape({[path_to_MRI_library ...
-        %             subject{winner} '/MEG/anatomy/' subject{winner} '.L.midthickness.4k_fs_LR.surf.gii'],...
-        %             [path_to_MRI_library subject{winner} '/MEG/anatomy/' subject{winner} ...
-        %             '.R.midthickness.4k_fs_LR.surf.gii']});
-        %
-        %         mesh = ft_convert_units(mesh,'mm');
-        %
-        %         % Transform 1 (MESH --> coreg via manual marking of fiducial points)
-        %         mesh.pos = ft_warp_apply(rmatx,mesh.pos);
-        %         mesh.pos = ft_warp_apply(initial_mri_realign{winner},mesh.pos);
-        %
-        %         % Scale
-        %         mesh.pos = ft_warp_apply([scaling_factor_all(winner) 0 0 0;0 scaling_factor_all(winner) 0 0; 0 0 scaling_factor_all(winner) 0; 0 0 0 1],mesh.pos);
-        %
-        %         %transform 2 (MESH --> coreg via ICP adjustment)
-        %         mesh.pos = ft_warp_apply(trans_matrix,mesh.pos);
-        %
-        %         %ft_determine_coordsys(mri_realigned2,'interactive','no'); hold on;
-        %         ft_plot_headshape(headshape_downsampled) %plot headshape
-        %         ft_plot_mesh(mesh,'facealpha',0.8); camlight; hold on; view([100 4]);
-        %         print('headmodel_3D_cortical_mesh_quality','-dpng');
-        
+
         %% SAVE
         fprintf('\nSaving the necessary data\n');
         
-        save headmodel headmodel
-        save trans_matrix trans_matrix
-        save sourcemodel3d sourcemodel3d
         save mri_realigned_MEMES mri_realigned_MEMES
         
         % Export MRI
@@ -565,7 +400,8 @@ switch method
         cfg.parameter   = 'anatomy';
         cfg.filename    = 'mri_realigned_MEMES';
         cfg.filetype    = 'nifti';
-        cfg.spmversion  = 'spm12'  
+        cfg.spmversion  = 'spm12';
+        cfg.datatype    = 'double';
         ft_volumewrite(cfg,mri_realigned_MEMES);
         
         fprintf('\nCOMPLETED - check the output for quality control\n');
